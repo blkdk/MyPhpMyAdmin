@@ -3377,6 +3377,7 @@ class Results
                 $isFieldTruncated,
                 $column,
                 $originalLength,
+                $lineEnding,
             ] = $this->getPartialText($column);
         }
 
@@ -3446,7 +3447,8 @@ class Results
             $whereComparison,
             $transformOptions,
             $isFieldTruncated,
-            (string) $originalLength
+            (string) $originalLength,
+            $lineEnding ?? null
         );
     }
 
@@ -4416,14 +4418,15 @@ class Results
         array $analyzedSqlResults,
         FieldMetadata $meta,
         array $map,
-        $data,
-        $displayedData,
+        string $data,
+        string $displayedData,
         ?TransformationsPlugin $transformationPlugin,
         string $nowrap,
         string $whereComparison,
         array $transformOptions,
         bool $isFieldTruncated = false,
-        string $originalLength = ''
+        string $originalLength = '',
+        ?string $lineEnding = null
     ) {
         $relationalDisplay = $_SESSION['tmpval']['relational_display'];
         $printView = $this->properties['printview'];
@@ -4436,6 +4439,8 @@ class Results
             $isFieldTruncated,
             $transformationPlugin !== null
         );
+
+        $canonicalValue = str_replace(["\r\n", "\r"], "\n", $data);
 
         if (! empty($analyzedSqlResults['statement']->expr)) {
             foreach ($analyzedSqlResults['statement']->expr as $expr) {
@@ -4532,7 +4537,39 @@ class Results
             'decimals' => $meta->decimals,
             'type' => $meta->getMappedType(),
             'original_length' => $originalLength,
+            'line_ending' => $lineEnding,
+            'canonical_value' => $canonicalValue,
         ]);
+    }
+
+    /**
+     * Detects the line-ending style used in a string.
+     *
+     * Determines whether the given string contains CRLF (\r\n) or LF (\n)
+     * line endings. CRLF is given precedence if both are present.
+     * Returns null if no line breaks are found.
+     *
+     * This is used to preserve line-ending semantics of textual data,
+     * especially when values may later be truncated or normalized
+     * for display or editing.
+     *
+     * @see getPartialText()
+     *
+     * @param string $value The string whose line endings should be detected
+     *
+     * @psalm-return 'CRLF'|'LF'|null
+     */
+    private function detectLineEnding(string $value): ?string
+    {
+        if (strpos($value, "\r\n") !== false) {
+            return 'CRLF';
+        }
+
+        if (strpos($value, "\n") !== false) {
+            return 'LF';
+        }
+
+        return null;
     }
 
     /**
@@ -4544,12 +4581,12 @@ class Results
      *
      * @param string $str string to be truncated
      *
-     * @return array
-     * @psalm-return array{bool, string, int}
+     * @psalm-return array{bool, string, int, 'CRLF'|'LF'|null}
      */
     private function getPartialText($str): array
     {
         $originalLength = mb_strlen($str);
+        $lineEnding = $this->detectLineEnding($str);
         if (
             $originalLength > $GLOBALS['cfg']['LimitChars']
             && $_SESSION['tmpval']['pftext'] === self::DISPLAY_PARTIAL_TEXT
@@ -4564,6 +4601,7 @@ class Results
             $truncated,
             $str,
             $originalLength,
+            $lineEnding,
         ];
     }
 }
